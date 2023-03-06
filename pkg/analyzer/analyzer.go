@@ -11,63 +11,52 @@ import (
 )
 
 var Analyzer = &analysis.Analyzer{
-	Name:     "goprintffuncname",
-	Doc:      "Checks that printf-like functions are named with `f` at the end.",
+	Name:     "goformatargs",
+	Doc:      "Checks that printf-like functions have matched %s and args.",
 	Run:      run,
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
+}
+
+var checkMap map[string]bool = map[string]bool{
+	"Printf":  true,
+	"Sprintf": true,
+	"Infof":   true,
+	"Debugf":  true,
+	"Warnf":   true,
+	"Errorf":  true,
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
 	inspector := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
 	nodeFilter := []ast.Node{
-		(*ast.FuncDecl)(nil),
+		(*ast.CallExpr)(nil),
 	}
 
 	inspector.Preorder(nodeFilter, func(node ast.Node) {
-		funcDecl := node.(*ast.FuncDecl)
-
-		if res := funcDecl.Type.Results; res != nil && len(res.List) != 0 {
+		n, ok := node.(*ast.CallExpr)
+		if !ok {
 			return
 		}
-
-		params := funcDecl.Type.Params.List
-		if len(params) < 2 { // [0] must be format (string), [1] must be args (...interface{})
+		fun, ok := n.Fun.(*ast.SelectorExpr)
+		if !ok {
 			return
 		}
-
-		formatParamType, ok := params[len(params)-2].Type.(*ast.Ident)
-		if !ok { // first param type isn't identificator so it can't be of type "string"
+		if !checkMap[fun.Sel.Name] {
 			return
 		}
-
-		if formatParamType.Name != "string" { // first param (format) type is not string
+		if len(n.Args) == 0 {
+			pass.Reportf(node.Pos(), "formatting function '%s' args shouldn't be 0", fun.Sel.Name)
 			return
 		}
-
-		if formatParamNames := params[len(params)-2].Names; len(formatParamNames) == 0 || formatParamNames[len(formatParamNames)-1].Name != "format" {
+		lit, ok := n.Args[0].(*ast.BasicLit)
+		if !ok {
 			return
 		}
-
-		argsParamType, ok := params[len(params)-1].Type.(*ast.Ellipsis)
-		if !ok { // args are not ellipsis (...args)
+		left := strings.ReplaceAll(lit.Value, "%%", "")
+		if strings.Count(left, "%") != len(n.Args)-1 {
+			pass.Reportf(node.Pos(), "formatting function '%s' args should match %% count", fun.Sel.Name)
 			return
 		}
-
-		elementType, ok := argsParamType.Elt.(*ast.InterfaceType)
-		if !ok { // args are not of interface type, but we need interface{}
-			return
-		}
-
-		if elementType.Methods != nil && len(elementType.Methods.List) != 0 {
-			return // has >= 1 method in interface, but we need an empty interface "interface{}"
-		}
-
-		if strings.HasSuffix(funcDecl.Name.Name, "f") {
-			return
-		}
-
-		pass.Reportf(node.Pos(), "printf-like formatting function '%s' should be named '%sf'",
-			funcDecl.Name.Name, funcDecl.Name.Name)
 	})
 
 	return nil, nil
