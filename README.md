@@ -1,16 +1,20 @@
-# go-printf-func-name
+# go-format-args-check
 
-The Go linter `go-printf-func-name` checks that printf-like functions are named with `f` at the end.
+The Go linter `go-format-args-check` checks that printf-like functions are named with `f` at the end.
 
-For example, `myLog` should be named `myLogf` by Go convention:
+For example, `Printf` should have exactly 3 args, but got 2. You'll get a error.
 
 ```go
 package main
 
 import "log"
 
-func myLog(format string, args ...interface{}) {
-	const prefix = "[my] "
-	log.Printf(prefix + format, args...)
+func main() {
+	log.Printf("name: %s, age: %d, test: %s", "test", 3)
 }
+```
+
+
+```
+main.go:6:2: formatting function 'Printf' args should match % count
 ```
